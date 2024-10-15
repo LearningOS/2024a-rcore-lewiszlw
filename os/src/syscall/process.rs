@@ -5,7 +5,7 @@ use crate::{
         current_task_first_scheduled_time, current_task_syscall_times, exit_current_and_run_next,
         suspend_current_and_run_next, TaskStatus,
     },
-    timer::get_time_us,
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -60,7 +60,7 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     let syscall_times = current_task_syscall_times();
 
     let first_scheduled_at = current_task_first_scheduled_time();
-    let now = get_time_us();
+    let now = get_time_ms();
 
     unsafe {
         *_ti = TaskInfo {
