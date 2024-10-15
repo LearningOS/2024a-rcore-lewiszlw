@@ -14,7 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
@@ -56,6 +56,7 @@ lazy_static! {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
             first_scheduled_at: None,
+            syscall_times: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -147,6 +148,18 @@ impl TaskManager {
         let current = inner.current_task;
         inner.tasks[current].first_scheduled_at.unwrap()
     }
+
+    fn current_task_syscall_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times
+    }
+
+    fn increment_current_task_syscall_times(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[syscall_id] += 1;
+    }
 }
 
 /// Run the first task in task list.
@@ -185,4 +198,14 @@ pub fn exit_current_and_run_next() {
 /// First scheduled time of current task
 pub fn current_task_first_scheduled_time() -> usize {
     TASK_MANAGER.current_task_first_scheduled_time()
+}
+
+/// Syscall times of current task
+pub fn current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    TASK_MANAGER.current_task_syscall_times()
+}
+
+/// Increment current task syscall times
+pub fn increment_current_task_syscall_times(syscall_id: usize) {
+    TASK_MANAGER.increment_current_task_syscall_times(syscall_id);
 }
