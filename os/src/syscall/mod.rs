@@ -25,9 +25,21 @@ mod fs;
 mod process;
 
 use fs::*;
+use lazy_static::lazy_static;
 use process::*;
+
+use crate::{config::MAX_SYSCALL_NUM, sync::UPSafeCell};
+
+lazy_static! {
+    static ref SYSCALL_COUNTER: UPSafeCell<[u32; MAX_SYSCALL_NUM]> =
+        unsafe { UPSafeCell::new([0; MAX_SYSCALL_NUM]) };
+}
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    let mut syscall_counter = SYSCALL_COUNTER.exclusive_access();
+    syscall_counter[syscall_id] += 1;
+    drop(syscall_counter);
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),

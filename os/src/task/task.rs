@@ -9,6 +9,8 @@ pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     /// The task context
     pub task_cx: TaskContext,
+    /// first scheduled time / ms
+    pub first_scheduled_at: Option<usize>,
 }
 
 /// The status of a task
