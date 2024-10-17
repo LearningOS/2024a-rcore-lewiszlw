@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -136,6 +137,20 @@ impl TaskManager {
         inner.tasks[cur].change_program_brk(size)
     }
 
+    /// Insert frame areas into current program
+    pub fn mmap_current_program(
+        &self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> Result<(), ()> {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur]
+            .memory_set
+            .mmap_framed_area(start_va, end_va, permission)
+    }
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -240,4 +255,13 @@ pub fn current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
 /// Increment current task syscall times
 pub fn increment_current_task_syscall_times(syscall_id: usize) {
     TASK_MANAGER.increment_current_task_syscall_times(syscall_id);
+}
+
+/// Insert frame areas into current program
+pub fn mmap_current_program(
+    start_va: VirtAddr,
+    end_va: VirtAddr,
+    permission: MapPermission,
+) -> Result<(), ()> {
+    TASK_MANAGER.mmap_current_program(start_va, end_va, permission)
 }

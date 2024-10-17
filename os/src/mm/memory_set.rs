@@ -63,6 +63,24 @@ impl MemorySet {
             None,
         );
     }
+
+    /// mmap
+    pub fn mmap_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> Result<(), ()> {
+        let area = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        for vpn in area.vpn_range.into_iter() {
+            if self.page_table.find_pte(vpn).is_some() {
+                return Err(());
+            }
+        }
+        self.push(area, None);
+        Ok(())
+    }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
