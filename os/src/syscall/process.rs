@@ -1,6 +1,8 @@
 //! Process management syscalls
 use core::mem;
 
+use alloc::vec::Vec;
+
 use crate::{
     config::MAX_SYSCALL_NUM,
     mm::translated_byte_buffer,
@@ -8,7 +10,7 @@ use crate::{
         change_program_brk, current_task_first_scheduled_time, current_task_syscall_times,
         current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
-    timer::get_time_ms,
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -48,7 +50,37 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+
+    let time_val_len = mem::size_of::<TimeVal>();
+
+    let us = get_time_us();
+    let time_val = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+
+    let data = unsafe {
+        core::slice::from_raw_parts(&time_val as *const TimeVal as *const u8, time_val_len)
+    };
+
+    let mut buffers = translated_byte_buffer(current_user_token(), _ts as *const u8, time_val_len);
+
+    copy_data_to_buffers(data, &mut buffers);
+    0
+}
+
+fn copy_data_to_buffers(data: &[u8], buffers: &mut Vec<&mut [u8]>) {
+    let mut start = 0;
+    let end = data.len();
+
+    for buffer in buffers.iter_mut() {
+        let min_end = core::cmp::min(buffer.len(), end - start);
+        buffer.copy_from_slice(&data[start..min_end]);
+        start = min_end;
+        if start == end {
+            break;
+        }
+    }
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -73,19 +105,9 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
         core::slice::from_raw_parts(&task_info as *const TaskInfo as *const u8, task_info_len)
     };
 
-    let buffers = translated_byte_buffer(current_user_token(), _ti as *const u8, task_info_len);
+    let mut buffers = translated_byte_buffer(current_user_token(), _ti as *const u8, task_info_len);
 
-    let mut start = 0;
-    let end = data.len();
-
-    for buffer in buffers {
-        let min_end = core::cmp::min(buffer.len(), end - start);
-        buffer.copy_from_slice(&data[start..min_end]);
-        start = min_end;
-        if start == end {
-            break;
-        }
-    }
+    copy_data_to_buffers(data, &mut buffers);
 
     0
 }
