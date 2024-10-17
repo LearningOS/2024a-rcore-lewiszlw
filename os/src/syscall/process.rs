@@ -1,9 +1,14 @@
 //! Process management syscalls
+use core::mem;
+
 use crate::{
     config::MAX_SYSCALL_NUM,
+    mm::translated_byte_buffer,
     task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+        change_program_brk, current_task_first_scheduled_time, current_task_syscall_times,
+        current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
+    timer::get_time_ms,
 };
 
 #[repr(C)]
@@ -50,8 +55,39 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    // trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+
+    let syscall_times = current_task_syscall_times();
+
+    let first_scheduled_at = current_task_first_scheduled_time();
+    let now = get_time_ms();
+
+    let task_info = TaskInfo {
+        status: TaskStatus::Running,
+        syscall_times,
+        time: now - first_scheduled_at,
+    };
+
+    let task_info_len = mem::size_of::<TaskInfo>();
+    let data = unsafe {
+        core::slice::from_raw_parts(&task_info as *const TaskInfo as *const u8, task_info_len)
+    };
+
+    let buffers = translated_byte_buffer(current_user_token(), _ti as *const u8, task_info_len);
+
+    let mut start = 0;
+    let end = data.len();
+
+    for buffer in buffers {
+        let min_end = core::cmp::min(buffer.len(), end - start);
+        buffer.copy_from_slice(&data[start..min_end]);
+        start = min_end;
+        if start == end {
+            break;
+        }
+    }
+
+    0
 }
 
 // YOUR JOB: Implement mmap.
