@@ -71,14 +71,40 @@ impl MemorySet {
         end_va: VirtAddr,
         permission: MapPermission,
     ) -> Result<(), ()> {
-        let area = MapArea::new(start_va, end_va, MapType::Framed, permission);
-        for vpn in area.vpn_range.into_iter() {
-            if self.page_table.find_pte(vpn).is_some() {
-                return Err(());
+        let new_area = MapArea::new(start_va, end_va, MapType::Framed, permission);
+        for vpn in new_area.vpn_range.into_iter() {
+            match self.page_table.find_pte(vpn) {
+                Some(pte) => {
+                    if pte.is_valid() {
+                        return Err(());
+                    }
+                }
+                None => {}
             }
         }
-        self.push(area, None);
+        self.push(new_area, None);
         Ok(())
+    }
+
+    /// munmap
+    pub fn munmap_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> Result<(), ()> {
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+
+        let mut area_idx_opt = None;
+        for (idx, area) in self.areas.iter().enumerate() {
+            if area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn {
+                area_idx_opt = Some(idx);
+                break;
+            }
+        }
+        if let Some(area_idx) = area_idx_opt {
+            self.areas[area_idx].unmap(&mut self.page_table);
+            self.areas.remove(area_idx);
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {

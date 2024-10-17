@@ -151,6 +151,15 @@ impl TaskManager {
             .mmap_framed_area(start_va, end_va, permission)
     }
 
+    /// munmap pages
+    pub fn munmap_current_program(&self, start_va: VirtAddr, end_va: VirtAddr) -> Result<(), ()> {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur]
+            .memory_set
+            .munmap_framed_area(start_va, end_va)
+    }
+
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
     fn run_next_task(&self) {
@@ -264,4 +273,9 @@ pub fn mmap_current_program(
     permission: MapPermission,
 ) -> Result<(), ()> {
     TASK_MANAGER.mmap_current_program(start_va, end_va, permission)
+}
+
+/// munmap pages
+pub fn munmap_current_program(start_va: VirtAddr, end_va: VirtAddr) -> Result<(), ()> {
+    TASK_MANAGER.munmap_current_program(start_va, end_va)
 }

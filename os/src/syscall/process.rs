@@ -9,7 +9,7 @@ use crate::{
     task::{
         change_program_brk, current_task_first_scheduled_time, current_task_syscall_times,
         current_user_token, exit_current_and_run_next, mmap_current_program,
-        suspend_current_and_run_next, TaskStatus,
+        munmap_current_program, suspend_current_and_run_next, TaskStatus,
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -126,6 +126,10 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
         return -1;
     }
 
+    if len == 0 {
+        return 0;
+    }
+
     let start_va = VirtAddr::from(start);
     let end_va = VirtAddr::from(start + len);
 
@@ -134,10 +138,10 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     if port & 0x1 == 1 {
         permission |= MapPermission::R;
     }
-    if port & 0x2 == 1 {
+    if port & 0x2 == 2 {
         permission |= MapPermission::W;
     }
-    if port & 0x4 == 1 {
+    if port & 0x4 == 4 {
         permission |= MapPermission::X;
     }
 
@@ -149,9 +153,25 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
 }
 
 // YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    // trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+
+    if start << (64 - PAGE_SIZE_BITS) != 0 {
+        return -1;
+    }
+
+    if len == 0 {
+        return 0;
+    }
+
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+
+    if let Err(_) = munmap_current_program(start_va, end_va) {
+        return -1;
+    }
+
+    0
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
