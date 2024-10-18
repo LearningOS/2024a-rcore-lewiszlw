@@ -116,3 +116,19 @@ lazy_static! {
 pub fn add_initproc() {
     add_task(INITPROC.clone());
 }
+
+/// Spawn a new process
+pub fn spawn(elf_data: &[u8]) -> usize {
+    let new_task = Arc::new(TaskControlBlock::new(elf_data));
+    let pid = new_task.getpid();
+
+    let current = current_task().unwrap();
+    new_task.inner_exclusive_access().parent = Some(Arc::downgrade(&current));
+    current
+        .inner_exclusive_access()
+        .children
+        .push(new_task.clone());
+    add_task(new_task);
+
+    pid
+}

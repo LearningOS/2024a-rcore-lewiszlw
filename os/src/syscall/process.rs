@@ -10,7 +10,7 @@ use crate::{
     task::{
         add_task, current_task, current_task_first_scheduled_time, current_task_syscall_times,
         current_user_token, exit_current_and_run_next, mmap_current_program,
-        munmap_current_program, suspend_current_and_run_next, TaskStatus,
+        munmap_current_program, spawn, suspend_current_and_run_next, TaskStatus,
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -275,12 +275,19 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, path);
+
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        spawn(data) as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
