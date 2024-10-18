@@ -1,14 +1,17 @@
 //! Process management syscalls
-use alloc::sync::Arc;
+use core::mem;
+
+use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
     config::MAX_SYSCALL_NUM,
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
+        add_task, current_task, current_task_first_scheduled_time, current_task_syscall_times,
+        current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
     },
+    timer::{get_time_ms, get_time_us},
 };
 
 #[repr(C)]
@@ -79,7 +82,11 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// If there is not a child process whose pid is same as given, return -1.
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
-    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task().unwrap().pid.0, pid);
+    trace!(
+        "kernel::pid[{}] sys_waitpid [{}]",
+        current_task().unwrap().pid.0,
+        pid
+    );
     let task = current_task().unwrap();
     // find a child process
 
@@ -117,23 +124,74 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+
+    let time_val_len = mem::size_of::<TimeVal>();
+
+    let us = get_time_us();
+    let time_val = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+
+    let data = unsafe {
+        core::slice::from_raw_parts(&time_val as *const TimeVal as *const u8, time_val_len)
+    };
+
+    let mut buffers = translated_byte_buffer(current_user_token(), ts as *const u8, time_val_len);
+
+    copy_data_to_buffers(data, &mut buffers);
+    0
+}
+
+fn copy_data_to_buffers(data: &[u8], buffers: &mut Vec<&mut [u8]>) {
+    let mut start = 0;
+    let end = data.len();
+
+    for buffer in buffers.iter_mut() {
+        let min_end = core::cmp::min(buffer.len(), end - start);
+        buffer.copy_from_slice(&data[start..min_end]);
+        start = min_end;
+        if start == end {
+            break;
+        }
+    }
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
-pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
+pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     trace!(
         "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+
+    let syscall_times = current_task_syscall_times();
+
+    let first_scheduled_at = current_task_first_scheduled_time();
+    let now = get_time_ms();
+
+    let task_info = TaskInfo {
+        status: TaskStatus::Running,
+        syscall_times,
+        time: now - first_scheduled_at,
+    };
+
+    let task_info_len = mem::size_of::<TaskInfo>();
+    let data = unsafe {
+        core::slice::from_raw_parts(&task_info as *const TaskInfo as *const u8, task_info_len)
+    };
+
+    let mut buffers = translated_byte_buffer(current_user_token(), ti as *const u8, task_info_len);
+
+    copy_data_to_buffers(data, &mut buffers);
+
+    0
 }
 
 /// YOUR JOB: Implement mmap.
