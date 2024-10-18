@@ -7,7 +7,7 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
-use crate::config::MAX_SYSCALL_NUM;
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM};
 use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
@@ -67,6 +67,8 @@ pub fn run_tasks() {
             if task_inner.first_scheduled_at.is_none() {
                 task_inner.first_scheduled_at = Some(get_time_ms());
             }
+            task_inner.stride += BIG_STRIDE / task_inner.priority;
+
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
