@@ -8,6 +8,7 @@ use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
 use crate::config::MAX_SYSCALL_NUM;
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -124,6 +125,26 @@ pub fn increment_current_task_syscall_times(syscall_id: usize) {
     let task = current_task().unwrap();
     let mut inner = task.inner_exclusive_access();
     inner.syscall_times[syscall_id] += 1;
+}
+
+/// Insert frame areas into current program
+pub fn mmap_current_program(
+    start_va: VirtAddr,
+    end_va: VirtAddr,
+    permission: MapPermission,
+) -> Result<(), ()> {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner
+        .memory_set
+        .mmap_framed_area(start_va, end_va, permission)
+}
+
+/// munmap pages
+pub fn munmap_current_program(start_va: VirtAddr, end_va: VirtAddr) -> Result<(), ()> {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.memory_set.munmap_framed_area(start_va, end_va)
 }
 
 ///Return to idle control flow for new scheduling

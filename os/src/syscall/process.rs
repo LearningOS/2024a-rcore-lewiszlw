@@ -4,12 +4,13 @@ use core::mem;
 use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    config::{MAX_SYSCALL_NUM, PAGE_SIZE_BITS},
     loader::get_app_data_by_name,
-    mm::{translated_byte_buffer, translated_refmut, translated_str},
+    mm::{translated_byte_buffer, translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
         add_task, current_task, current_task_first_scheduled_time, current_task_syscall_times,
-        current_user_token, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+        current_user_token, exit_current_and_run_next, mmap_current_program,
+        munmap_current_program, suspend_current_and_run_next, TaskStatus,
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -195,21 +196,71 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+
+    if start << (64 - PAGE_SIZE_BITS) != 0 {
+        return -1;
+    }
+    if port & !0x7 != 0 {
+        return -1;
+    }
+    if port & 0x7 == 0 {
+        return -1;
+    }
+
+    if len == 0 {
+        return 0;
+    }
+
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+
+    let mut permission = MapPermission::U;
+
+    if port & 0x1 == 1 {
+        permission |= MapPermission::R;
+    }
+    if port & 0x2 == 2 {
+        permission |= MapPermission::W;
+    }
+    if port & 0x4 == 4 {
+        permission |= MapPermission::X;
+    }
+
+    if let Err(_) = mmap_current_program(start_va, end_va, permission) {
+        return -1;
+    }
+
+    0
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+
+    if start << (64 - PAGE_SIZE_BITS) != 0 {
+        return -1;
+    }
+
+    if len == 0 {
+        return 0;
+    }
+
+    let start_va = VirtAddr::from(start);
+    let end_va = VirtAddr::from(start + len);
+
+    if let Err(_) = munmap_current_program(start_va, end_va) {
+        return -1;
+    }
+
+    0
 }
 
 /// change data segment size
