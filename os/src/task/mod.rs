@@ -33,8 +33,9 @@ pub use task::{TaskControlBlock, TaskStatus};
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
-    current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
-    Processor,
+    current_task, current_task_first_scheduled_time, current_task_syscall_times, current_trap_cx,
+    current_user_token, increment_current_task_syscall_times, mmap_current_program,
+    munmap_current_program, run_tasks, schedule, take_current_task, Processor,
 };
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
@@ -119,4 +120,20 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Spawn a new process
+pub fn spawn(elf_data: &[u8]) -> usize {
+    let new_task = Arc::new(TaskControlBlock::new(elf_data));
+    let pid = new_task.getpid();
+
+    let current = current_task().unwrap();
+    new_task.inner_exclusive_access().parent = Some(Arc::downgrade(&current));
+    current
+        .inner_exclusive_access()
+        .children
+        .push(new_task.clone());
+    add_task(new_task);
+
+    pid
 }

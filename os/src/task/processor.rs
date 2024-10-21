@@ -7,7 +7,10 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::{BIG_STRIDE, MAX_SYSCALL_NUM};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
@@ -61,6 +64,12 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+
+            if task_inner.first_scheduled_at.is_none() {
+                task_inner.first_scheduled_at = Some(get_time_ms());
+            }
+            task_inner.stride += BIG_STRIDE / task_inner.priority;
+
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -108,4 +117,45 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     unsafe {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
+}
+
+/// First scheduled time of current task
+pub fn current_task_first_scheduled_time() -> usize {
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    inner.first_scheduled_at.unwrap()
+}
+
+/// Syscall times of current task
+pub fn current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    inner.syscall_times
+}
+
+/// Increment current task syscall times
+pub fn increment_current_task_syscall_times(syscall_id: usize) {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.syscall_times[syscall_id] += 1;
+}
+
+/// Insert frame areas into current program
+pub fn mmap_current_program(
+    start_va: VirtAddr,
+    end_va: VirtAddr,
+    permission: MapPermission,
+) -> Result<(), ()> {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner
+        .memory_set
+        .mmap_framed_area(start_va, end_va, permission)
+}
+
+/// munmap pages
+pub fn munmap_current_program(start_va: VirtAddr, end_va: VirtAddr) -> Result<(), ()> {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    inner.memory_set.munmap_framed_area(start_va, end_va)
 }
