@@ -4,6 +4,8 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
+use core::cell::RefMut;
+
 use super::File;
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
@@ -25,7 +27,7 @@ pub struct OSInode {
 /// The OS inode inner in 'UPSafeCell'
 pub struct OSInodeInner {
     offset: usize,
-    inode: Arc<Inode>,
+    pub inode: Arc<Inode>,
 }
 
 impl OSInode {
@@ -51,6 +53,11 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
         }
         v
+    }
+
+    /// inner
+    pub fn inner_exclusive_access(&self) -> RefMut<'_, OSInodeInner> {
+        self.inner.exclusive_access()
     }
 }
 
@@ -124,7 +131,46 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+/// lintat a new file
+pub fn linkat_file(old_name: &str, new_name: &str) {
+    let old_inode = ROOT_INODE.find(old_name).unwrap();
+    ROOT_INODE.linkat(new_name, old_inode.id);
+    old_inode.modify_disk_inode(|disk_node| {
+        disk_node.nlink += 1;
+    });
+}
+
+/// unlinkat a file
+pub fn unlinkat_file(name: &str) -> Result<(), ()> {
+    let Some(inode) = ROOT_INODE.find(name) else {
+        return Err(());
+    };
+
+    ROOT_INODE.unlinkat(name);
+
+    let mut should_delete = false;
+    inode.modify_disk_inode(|disk_inode| {
+        disk_inode.nlink -= 1;
+        if disk_inode.nlink == 0 {
+            should_delete = true;
+        }
+    });
+
+    if should_delete {
+        inode.clear();
+        inode
+            .fs
+            .lock()
+            .inode_bitmap
+            .dealloc(&inode.block_device, inode.id as usize);
+    }
+    Ok(())
+}
+
 impl File for OSInode {
+    fn as_any(&self) -> &dyn core::any::Any {
+        self
+    }
     fn readable(&self) -> bool {
         self.readable
     }

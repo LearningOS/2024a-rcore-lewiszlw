@@ -144,7 +144,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     0
 }
 
-fn copy_data_to_buffers(data: &[u8], buffers: &mut Vec<&mut [u8]>) {
+pub fn copy_data_to_buffers(data: &[u8], buffers: &mut Vec<&mut [u8]>) {
     let mut start = 0;
     let end = data.len();
 
