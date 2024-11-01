@@ -49,28 +49,53 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.mutex_list[id] = mutex;
+        process_inner.mutex_available[id] = 1;
+        assert_eq!(
+            process_inner.mutex_list.len(),
+            process_inner.mutex_available.len()
+        );
         id as isize
     } else {
         process_inner.mutex_list.push(mutex);
+        process_inner.mutex_available.push(1);
+        for thread_mutex_alloc in process_inner.mutex_allocation.iter_mut() {
+            if let Some(v) = thread_mutex_alloc {
+                v.push(0);
+            }
+        }
+        assert_eq!(
+            process_inner.mutex_list.len(),
+            process_inner.mutex_available.len()
+        );
         process_inner.mutex_list.len() as isize - 1
     }
 }
 /// mutex lock syscall
 pub fn sys_mutex_lock(mutex_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_lock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid,
     );
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
+    if process_inner.enable_deadlock_detect {
+        let work = process_inner.mutex_available[mutex_id];
+        let need = 1;
+        if need > work {
+            return -0xDEAD;
+        }
+    }
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    process_inner.mutex_available[mutex_id] = 0;
+    process_inner.mutex_allocation[tid].as_mut().unwrap()[mutex_id] = 1;
     drop(process_inner);
     drop(process);
     mutex.lock();
@@ -78,20 +103,23 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
 }
 /// mutex unlock syscall
 pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
+    let tid = current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .res
+        .as_ref()
+        .unwrap()
+        .tid;
     trace!(
         "kernel:pid[{}] tid[{}] sys_mutex_unlock",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
-        current_task()
-            .unwrap()
-            .inner_exclusive_access()
-            .res
-            .as_ref()
-            .unwrap()
-            .tid
+        tid
     );
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
+    process_inner.mutex_available[mutex_id] = 1;
+    process_inner.mutex_allocation[tid].as_mut().unwrap()[mutex_id] = 0;
     drop(process_inner);
     drop(process);
     mutex.unlock();
