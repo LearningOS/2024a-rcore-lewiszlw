@@ -59,15 +59,22 @@ pub fn sys_mutex_create(blocking: bool) -> isize {
     } else {
         process_inner.mutex_list.push(mutex);
         process_inner.mutex_available.push(1);
+        assert_eq!(
+            process_inner.mutex_list.len(),
+            process_inner.mutex_available.len()
+        );
+
         for thread_mutex_alloc in process_inner.mutex_allocation.iter_mut() {
             if let Some(v) = thread_mutex_alloc {
                 v.push(0);
             }
         }
-        assert_eq!(
-            process_inner.mutex_list.len(),
-            process_inner.mutex_available.len()
-        );
+        for thread_mutex_need in process_inner.mutex_need.iter_mut() {
+            if let Some(v) = thread_mutex_need {
+                v.push(0);
+            }
+        }
+
         process_inner.mutex_list.len() as isize - 1
     }
 }
@@ -87,10 +94,42 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     );
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
+
+    process_inner.mutex_need[tid].as_mut().unwrap()[mutex_id] += 1;
+
     if process_inner.enable_deadlock_detect {
-        let work = process_inner.mutex_available[mutex_id];
-        let need = 1;
-        if need > work {
+        // request <= need
+        if 1 > process_inner.mutex_need[tid].as_ref().unwrap()[mutex_id] {
+            return -0xDEAD;
+        }
+
+        // request <= available
+        if 1 > process_inner.mutex_available[mutex_id] {
+            return -0xDEAD;
+        }
+
+        process_inner.mutex_available[mutex_id] -= 1;
+        process_inner.mutex_allocation[tid].as_mut().unwrap()[mutex_id] += 1;
+        process_inner.mutex_need[tid].as_mut().unwrap()[mutex_id] -= 1;
+
+        let mut work = process_inner.mutex_available.clone();
+        let mut finish = vec![false; process_inner.tasks.len()];
+        for (tid, task) in process_inner.tasks.iter().enumerate() {
+            match task {
+                Some(_tcb) => {
+                    if process_inner.mutex_need[tid].as_ref().unwrap()[mutex_id] <= work[mutex_id] {
+                        work[mutex_id] +=
+                            process_inner.mutex_allocation[tid].as_ref().unwrap()[mutex_id];
+                        finish[tid] = true;
+                    }
+                }
+                None => {
+                    finish[tid] = true;
+                }
+            }
+        }
+        if finish.iter().any(|f| !f) {
+            process_inner.mutex_need[tid].as_mut().unwrap()[mutex_id] -= 1;
             return -0xDEAD;
         }
     }
@@ -119,8 +158,11 @@ pub fn sys_mutex_unlock(mutex_id: usize) -> isize {
     let process = current_process();
     let mut process_inner = process.inner_exclusive_access();
     let mutex = Arc::clone(process_inner.mutex_list[mutex_id].as_ref().unwrap());
-    process_inner.mutex_available[mutex_id] = 1;
-    process_inner.mutex_allocation[tid].as_mut().unwrap()[mutex_id] = 0;
+
+    process_inner.mutex_available[mutex_id] += 1;
+    process_inner.mutex_allocation[tid].as_mut().unwrap()[mutex_id] -= 1;
+    process_inner.mutex_need[tid].as_mut().unwrap()[mutex_id] += 1;
+
     drop(process_inner);
     drop(process);
     mutex.unlock();

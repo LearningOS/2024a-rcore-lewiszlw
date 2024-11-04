@@ -40,6 +40,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     while process_inner.tasks.len() < new_task_tid + 1 {
         process_inner.tasks.push(None);
         process_inner.mutex_allocation.push(None);
+        process_inner.mutex_need.push(None);
         process_inner.seamphore_allocation.push(None);
         process_inner.seamphore_need.push(None);
     }
@@ -47,6 +48,7 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
 
     let mutex_len = process_inner.mutex_list.len();
     process_inner.mutex_allocation[new_task_tid] = Some(vec![0; mutex_len]);
+    process_inner.mutex_need[new_task_tid] = Some(vec![0; mutex_len]);
     let seamphore_len = process_inner.semaphore_list.len();
     process_inner.seamphore_allocation[new_task_tid] = Some(vec![0; seamphore_len]);
     process_inner.seamphore_need[new_task_tid] = Some(vec![0; seamphore_len]);

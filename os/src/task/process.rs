@@ -51,8 +51,11 @@ pub struct ProcessControlBlockInner {
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
     // enable_deadlock_detect
     pub enable_deadlock_detect: bool,
+
     pub mutex_available: Vec<u8>,
     pub mutex_allocation: Vec<Option<Vec<u8>>>,
+    pub mutex_need: Vec<Option<Vec<u8>>>,
+
     pub seamphore_available: Vec<usize>,
     pub seamphore_allocation: Vec<Option<Vec<usize>>>,
     pub seamphore_need: Vec<Option<Vec<usize>>>,
@@ -129,6 +132,7 @@ impl ProcessControlBlock {
                     enable_deadlock_detect: false,
                     mutex_available: Vec::new(),
                     mutex_allocation: Vec::new(),
+                    mutex_need: Vec::new(),
                     seamphore_available: Vec::new(),
                     seamphore_allocation: Vec::new(),
                     seamphore_need: Vec::new(),
@@ -161,6 +165,9 @@ impl ProcessControlBlock {
         let mutex_list_len = process_inner.mutex_list.len();
         process_inner
             .mutex_allocation
+            .push(Some(vec![0; mutex_list_len]));
+        process_inner
+            .mutex_need
             .push(Some(vec![0; mutex_list_len]));
         let seamphore_list_len = process_inner.semaphore_list.len();
         process_inner
@@ -274,6 +281,7 @@ impl ProcessControlBlock {
                     enable_deadlock_detect: false,
                     mutex_available: Vec::new(),
                     mutex_allocation: Vec::new(),
+                    mutex_need: Vec::new(),
                     seamphore_available: Vec::new(),
                     seamphore_allocation: Vec::new(),
                     seamphore_need: Vec::new(),
@@ -303,6 +311,9 @@ impl ProcessControlBlock {
         let mutex_list_len = child_inner.mutex_list.len();
         child_inner
             .mutex_allocation
+            .push(Some(vec![0; mutex_list_len]));
+        child_inner
+            .mutex_need
             .push(Some(vec![0; mutex_list_len]));
         let seamphore_list_len = child_inner.semaphore_list.len();
         child_inner
